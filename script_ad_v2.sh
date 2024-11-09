@@ -84,7 +84,7 @@ configure_network_files2() {
 
     # Configuração temporária do resolv.conf
     sudo bash -c "cat > ${RESOLV_CONF}" <<EOF
-nameserver 8.8.8.8
+nameserver ${DNS_GOOGLE}
 EOF
 
     if [ $? -eq 0 ]; then
@@ -289,7 +289,7 @@ options {
     // Configuração de DNS recursivo
     recursion yes;
     forwarders {
-         8.8.8.8;
+        ${DNS_GOOGLE};
          8.8.4.4;
     };
 
