@@ -17,7 +17,13 @@ ZONE_FILE="${ZONE_DIR}${DOMAIN}.zone"
 
 # Defina as variáveis de configuração de rede
 NETPLAN_CONF="/etc/netplan/50-cloud-init.yaml"
-INTERFACE_NAME="ens33"  # Altere para o nome da sua interface de rede, se necessário
+#Rede wan
+INTERFACE_NAME_wan="ens33"  # Altere para o nome da sua interface de rede, se necessário
+GATEWAY_wan="172.16.57.2"
+IP_wan="172.16.57.3"
+
+#Rede lan
+INTERFACE_NAME="ens34"  # Altere para o nome da sua interface de rede, se necessário
 GATEWAY="172.16.0.1"
 DNS_SERVERS="127.0.0.1"
 DNS_GOOGLE="8.8.8.8"
@@ -373,6 +379,17 @@ configure_network() {
 network:
     version: 2
     ethernets:
+        ${INTERFACE_NAME_wan}:
+            addresses:
+                - ${IP_wan}/24
+            dhcp4: false
+            optional: true
+            nameservers:
+                addresses:
+                    - ${DNS_GOOGLE}
+            routes:
+                - to: default
+                  via: ${GATEWAY_wan}
         ${INTERFACE_NAME}:
             addresses:
                 - ${IP}/24
