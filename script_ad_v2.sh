@@ -1,311 +1,530 @@
 #!/bin/bash
+#não esquecer de verificar a rota no gw da rede local para o dns
+# Variáveis
+DOMAIN="lima.internet"
+UPPER_DOMAIN=${DOMAIN^^}
+ADMIN_PASSWORD="abc@1234"  # Variável personalizável para a senha do administrador
+SAMBA_CONF_DIR="/etc/samba"
+BIND_CONF_DIR="/etc/bind"
+RESOLV_CONF="/etc/resolv.conf"
+HOSTS_CONF="/etc/hosts"
+PRIVATE_KEYTAB_FILE="/var/lib/samba/private/dns.keytab"
+BIND_KEYTAB_FILE="/var/lib/samba/bind-dns/dns.keytab"
 
-# ================================================
-# Variáveis Iniciais
-# ================================================
+# Defina o caminho do arquivo de zona
+ZONE_DIR="/var/lib/samba/bind-dns/dns/"
+ZONE_FILE="${ZONE_DIR}${DOMAIN}.zone"
 
-# Configurações de Rede
-NETWORK="172.16.0.0/24"         # Rede principal
-SUBNET_MASK="255.255.255.0"    # Máscara de sub-rede
-IP_LAN="172.16.0.1"            # IP da LAN
-GATEWAY_LAN="172.16.0.1"       # Gateway da LAN
-INTERFACE_WAN="ens33"          # Interface WAN
-INTERFACE_LAN="ens37"          # Interface LAN
+# Defina as variáveis de configuração de rede
+NETPLAN_CONF="/etc/netplan/50-cloud-init.yaml"
+INTERFACE_NAME="ens33"  # Altere para o nome da sua interface de rede, se necessário
+GATEWAY="172.16.0.1"
+DNS_SERVERS="127.0.0.1"
+DNS_GOOGLE="8.8.8.8"
+SERVER="server"
+IP="172.16.0.252"
 
-# Configurações de DNS
-DNS_SERVERS="172.16.0.252"     # Servidor DNS primário
-DNS_SERVERS_2="172.16.0.251"   # Servidor DNS secundário
-DNS_GOOGLE="8.8.8.8"           # Servidor DNS do Google
+# Caminho para o arquivo de configuração do systemd-resolved
+RESOLVED_CONF="/etc/systemd/resolved.conf"
+# Define o conteúdo da configuração do systemd-resolved
+RESOLVED_CONF_CONTENT="[Resolve]
+DNS=127.0.0.1
+FallbackDNS=172.16.0.252
+Domains=lima.internet"
 
-# Configurações do Domínio
-DOMAIN="lima.internet"         # Domínio principal
-UPPER_DOMAIN=${DOMAIN^^}       # Domínio em maiúsculas
-HOSTNAME="serverfire"          # Nome do host
-HOSTNAME_AD="server"           # Nome do host para o Active Directory
-
-# Configurações do Samba
-SAMBA_CONF_DIR="/etc/samba"                     # Diretório de configuração do Samba
-PRIVATE_KEYTAB_FILE="/var/lib/samba/private/dns.keytab"  # Arquivo de chave Kerberos para o Samba
-
-# Configurações do BIND
-BIND_CONF_DIR="/etc/bind"                      # Diretório de configuração do BIND
-ZONE_DIR="/var/lib/samba/bind-dns/dns/"        # Diretório das zonas DNS
-ZONE_FILE="${ZONE_DIR}${DOMAIN}.zone"          # Arquivo de zona DNS
-
-# Configurações do Squid
-SQUID_CONF="/etc/squid/squid.conf"             # Arquivo de configuração do Squid
-
-# Configurações do DHCP
-DHCP_CONF="/etc/dhcp/dhcpd.conf"                # Arquivo de configuração do DHCP
-DHCP_RANGE_START="172.16.0.10"                 # Início do intervalo DHCP
-DHCP_RANGE_END="172.16.0.200"                  # Fim do intervalo DHCP
-
-# Configurações do Sistema
-NETPLAN_CONF="/etc/netplan/50-cloud-init.yaml" # Arquivo de configuração do Netplan
-RESOLV_CONF="/etc/resolv.conf"                  # Arquivo de configuração do DNS
-HOSTS_CONF="/etc/hosts"                        # Arquivo de hosts
-RESOLVED_CONF="/etc/systemd/resolved.conf"     # Arquivo de configuração do resolved
-
-# ================================================
-# Função para Remover Pacotes e Arquivos de Configuração
-# ================================================
-
-remove_packages() {
-    echo "Removendo pacotes e arquivos de configuração..."
-    
-    # Lista de pacotes a serem removidos
-    local packages=("bind9" "samba" "squid" "isc-dhcp-server" "krb5-user" "krb5-config" "winbind")
-
-    for pkg in "${packages[@]}"; do
-        sudo apt-get remove --purge -y $pkg
-        sudo apt-get autoremove --purge -y
-    done
-
-    # Remove arquivos de configuração residuais
-    sudo rm -rf /etc/bind /etc/samba /etc/squid /etc/dhcp /var/lib/samba
-}
-
-# ================================================
-# Função para Instalar Pacotes Necessários
-# ================================================
-
-install_packages() {
-    echo "Instalando pacotes necessários..."
-    
-    # Atualiza a lista de pacotes
-    sudo apt-get update
-
-    # Lista de pacotes a serem instalados
-    local packages=("bind9" "samba" "squid" "isc-dhcp-server" "krb5-user" "krb5-config" "winbind")
-
-    for pkg in "${packages[@]}"; do
-        sudo apt-get install -y $pkg
-    done
-}
-
-# ================================================
-# Função para Configurar Variáveis Dinâmicas
-# ================================================
-
-configure_variables() {
-    echo "Configurando variáveis dinâmicas..."
-
-    # Define as variáveis de rede e DNS com base nas configurações fornecidas
-    NETWORK="${NETWORK}"
-    DNS_SERVERS="${DNS_SERVERS}"
-    DNS_SERVERS_2="${DNS_SERVERS_2}"
-    DOMAIN="${DOMAIN}"
-    IP_LAN="${IP_LAN}"
-    GATEWAY_LAN="${GATEWAY_LAN}"
-    DHCP_RANGE_START="${DHCP_RANGE_START}"
-    DHCP_RANGE_END="${DHCP_RANGE_END}"
-}
-
-# ================================================
-# Função para Atualizar o Sistema
-# ================================================
-
+# Função para atualizar o sistema
 update_system() {
     echo "Atualizando o sistema..."
     sudo apt-get update
+    if [ $? -eq 0 ]; then
+        echo "Atualização de pacotes concluída com sucesso."
+    else
+        echo "Falha na atualização dos pacotes."
+    fi
+
     sudo apt-get upgrade -y
+    if [ $? -eq 0 ]; then
+        echo "Atualização dos pacotes concluída com sucesso."
+    else
+        echo "Falha na atualização dos pacotes."
+    fi
 }
 
-# ================================================
-# Função para Configurar o Netplan
-# ================================================
-
-configure_netplan() {
-    echo "Configurando Netplan..."
-    sudo bash -c "cat > ${NETPLAN_CONF}" <<EOF
-network:
-  version: 2
-  ethernets:
-    ${INTERFACE_WAN}:
-      dhcp4: true
-    ${INTERFACE_LAN}:
-      addresses:
-        - ${IP_LAN}/24
-      dhcp4: false
-EOF
-    sudo netplan apply
-}
-
-# ================================================
-# Função para Configurar /etc/resolv.conf e /etc/hosts
-# ================================================
-
+# Função para configurar resolv.conf e hosts
 configure_network_files() {
     echo "Configurando /etc/resolv.conf e /etc/hosts..."
+
+    # Configuração temporária do resolv.conf
     sudo bash -c "cat > ${RESOLV_CONF}" <<EOF
-[Resolve]
-DNS=${DNS_SERVERS}
-FallbackDNS=${DNS_GOOGLE}
-Domains=${DOMAIN}
+nameserver 127.0.0.1
 EOF
+
+    if [ $? -eq 0 ]; then
+        echo "Arquivo /etc/resolv.conf configurado com sucesso."
+    else
+        echo "Falha ao configurar o arquivo /etc/resolv.conf."
+    fi
+
+    # Configuração do hosts
     sudo bash -c "cat > ${HOSTS_CONF}" <<EOF
 127.0.0.1       localhost
-${IP_LAN}       ${HOSTNAME}.${DOMAIN} ${HOSTNAME}
-${DNS_SERVERS}  ${HOSTNAME_AD}.${DOMAIN} ${HOSTNAME_AD}
-EOF
-    sudo bash -c "echo '${HOSTNAME}' > /etc/hostname"
-}
-
-# ================================================
-# Função para Configurar o Firewall, NAT e Squid
-# ================================================
-
-configure_firewall() {
-    echo "Configurando firewall, NAT e Squid com Kerberos..."
-    
-    # Configura o roteamento de pacotes
-    sudo bash -c "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf"
-    sudo sysctl -p
-
-    # Configura o firewall com iptables
-    sudo bash -c "cat > /etc/init.d/firewall.sh" <<EOF
-#!/bin/bash
-### BEGIN INIT INFO
-# Provides:          firewall
-# Required-Start:    \$remote_fs \$syslog
-# Required-Stop:     \$remote_fs \$syslog
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: Configurações do firewall
-# Description:       Configurações de firewall usando iptables
-### END INIT INFO
-
-# Regras de firewall usando iptables
-iptables -t nat -A POSTROUTING -o ${INTERFACE_WAN} -j MASQUERADE
-iptables -A FORWARD -i ${INTERFACE_WAN} -o ${INTERFACE_LAN} -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A FORWARD -i ${INTERFACE_LAN} -o ${INTERFACE_WAN} -j ACCEPT
-iptables -A INPUT -p tcp --dport 22 -j ACCEPT  # Permitir SSH
-iptables -A INPUT -p tcp --dport 3128 -j ACCEPT  # Permitir Squid
-iptables -A INPUT -i lo -j ACCEPT  # Permitir loopback
-iptables -A INPUT -j DROP  # Bloquear tudo o mais
+${IP}           ${SERVER}.${DOMAIN} ${SERVER}
 EOF
 
-    sudo chmod +x /etc/init.d/firewall.sh
-    sudo update-rc.d firewall.sh defaults
-    sudo service firewall.sh start
+    if [ $? -eq 0 ]; then
+        echo "Arquivo /etc/hosts configurado com sucesso."
+    else
+        echo "Falha ao configurar o arquivo /etc/hosts."
+    fi
+}
 
-    # Configura o Squid com Kerberos
-    sudo bash -c "cat > ${SQUID_CONF}" <<EOF
-http_port 3128
-auth_param negotiate program /usr/lib/squid/negotiate_kerberos_auth -s HTTP/${HOSTNAME}.${DOMAIN}@${UPPER_DOMAIN}
-auth_param negotiate children 10
-auth_param negotiate keep_alive on
-acl kerberos-auth proxy_auth REQUIRED
-http_access allow kerberos-auth
-http_access deny all
-access_log /var/log/squid/access.log squid
+# Função para configurar resolv.conf e hosts com DNS do Google
+configure_network_files2() {
+    echo "Configurando /etc/resolv.conf e /etc/hosts..."
+
+    # Configuração temporária do resolv.conf
+    sudo bash -c "cat > ${RESOLV_CONF}" <<EOF
+nameserver 8.8.8.8
 EOF
 
-    sudo systemctl restart squid
+    if [ $? -eq 0 ]; then
+        echo "Arquivo /etc/resolv.conf configurado com sucesso."
+    else
+        echo "Falha ao configurar o arquivo /etc/resolv.conf."
+    fi
 
-    # Configura a chave Kerberos
-    sudo kinit administrator@${UPPER_DOMAIN}
-    sudo net ads join -U Administrator%${ADMIN_PASSWORD}
-    sudo net ads keytab create
-}
-
-# ================================================
-# Função para Configurar o DHCP
-# ================================================
-
-configure_dhcp() {
-    echo "Configurando o servidor DHCP..."
-    sudo bash -c "cat > ${DHCP_CONF}" <<EOF
-# Configuração do servidor DHCP
-default-lease-time 600;
-max-lease-time 7200;
-authoritative;
-
-subnet ${NETWORK} netmask ${SUBNET_MASK} {
-    range ${DHCP_RANGE_START} ${DHCP_RANGE_END};
-    option domain-name-servers ${DNS_SERVERS}, ${DNS_SERVERS_2};
-    option routers ${IP_LAN};
-    option broadcast-address ${NETWORK};
-}
+    # Configuração do hosts
+    sudo bash -c "cat > ${HOSTS_CONF}" <<EOF
+127.0.0.1       localhost
+${IP}           ${SERVER}.${DOMAIN} ${SERVER}
 EOF
-    sudo systemctl restart isc-dhcp-server
+
+    if [ $? -eq 0 ]; then
+        echo "Arquivo /etc/hosts configurado com sucesso."
+    else
+        echo "Falha ao configurar o arquivo /etc/hosts."
+    fi
 }
 
-# ================================================
-# Função para Configurar o Samba e Active Directory
-# ================================================
+# Função para parar e remover pacotes e dados
+remove_packages() {
+    echo "Parando e removendo pacotes Samba, Kerberos, Winbind, PAM libs e BIND9..."
 
+    sudo systemctl stop smbd nmbd winbind
+    sudo systemctl disable smbd nmbd winbind
+    if [ $? -eq 0 ]; then
+        echo "Serviços parados e desativados com sucesso."
+    else
+        echo "Falha ao parar e desativar os serviços."
+    fi
+
+    sudo apt-get remove --purge -y samba samba-common-bin krb5-kdc krb5-admin-server winbind libpam-winbind libnss-winbind libpam-krb5 libpam-mkhomedir libpam-mount bind9 bind9utils bind9-doc
+    if [ $? -eq 0 ]; then
+        echo "Pacotes removidos com sucesso."
+    else
+        echo "Falha ao remover pacotes."
+    fi
+
+    sudo apt-get autoremove -y
+    sudo rm -rf /var/lib/samba /etc/samba /var/lib/krb5kdc /etc/krb5kdc /var/lib/bind /etc/bind /etc/krb5.conf 
+    if [ $? -eq 0 ]; then
+        echo "Dados removidos com sucesso."
+    else
+        echo "Falha ao remover dados."
+    fi
+}
+
+# Função para reinstalar pacotes
+install_packages() {
+    echo "Instalando pacotes Samba, Kerberos, Winbind, PAM libs e BIND9..."
+
+    configure_network_files2
+
+    sudo apt-get update
+    if [ $? -eq 0 ]; then
+        echo "Pacotes atualizados com sucesso."
+    else
+        echo "Falha ao atualizar pacotes."
+    fi
+
+    sudo apt-get install -y samba krb5-kdc krb5-admin-server winbind libpam-winbind libnss-winbind libpam-krb5 libpam-mkhomedir libpam-mount bind9 bind9utils bind9-doc
+    if [ $? -eq 0 ]; then
+        echo "Pacotes instalados com sucesso."
+    else
+        echo "Falha ao instalar pacotes."
+    fi
+
+    configure_network_files
+}
+
+# Função para configurar o Samba
 configure_samba() {
-    echo "Configurando o Samba e Active Directory..."
+    echo "Configurando Samba como controlador de domínio..."
+
+    sudo rm -f ${SAMBA_CONF_DIR}/smb.conf
+    sudo samba-tool domain provision --realm=${DOMAIN} --domain=${DOMAIN%%.*} --server-role=dc --dns-backend=BIND9_DLZ --use-rfc2307 --function-level=2008_R2 --adminpass=${ADMIN_PASSWORD}
+    if [ $? -eq 0 ]; then
+        echo "Domínio provisionado com sucesso."
+    else
+        echo "Falha ao provisionar o domínio."
+    fi
+
+    sudo cp ${SAMBA_CONF_DIR}/smb.conf ${SAMBA_CONF_DIR}/smb.conf.bak
     sudo bash -c "cat > ${SAMBA_CONF_DIR}/smb.conf" <<EOF
 [global]
-   workgroup = ${UPPER_DOMAIN}
-   server string = %h server (Samba, Ubuntu)
-   netbios name = ${HOSTNAME_AD}
-   security = ADS
-   realm = ${UPPER_DOMAIN}
-   password server = ${HOSTNAME_AD}.${DOMAIN}
-   idmap config *:backend = tdb
-   idmap config *:range = 1000000-1999999
-   idmap config ${UPPER_DOMAIN}:backend = ad
-   idmap config ${UPPER_DOMAIN}:range = 10000-999999
-   idmap config ${UPPER_DOMAIN}:schema_mode = rfc2307
-   template homedir = /home/%U
-   template shell = /bin/bash
-   kerberos method = secrets and keytab
-   dns forwarder = ${DNS_SERVERS}
+    workgroup = ${DOMAIN%%.*}
+    realm = ${DOMAIN}
+    netbios name = ${SERVER}
+    server services = -dns
+    server role = active directory domain controller
+    dns forwarder = 127.0.0.1 
+    winbind refresh tickets = Yes
+    dedicated keytab file = ${PRIVATE_KEYTAB_FILE}
+    kerberos method = secrets and keytab
+  
 
-[netlogon]
-   path = /var/lib/samba/sysvol/${DOMAIN}/scripts
-   read only = yes
+    idmap config * : backend = tdb
+    idmap config * : range = 3000-7999
+    idmap config $UPPER_DOMAIN : backend = rid
+    idmap config $UPPER_DOMAIN : range = 10000-9999999
+
+    winbind use default domain = Yes     
+    winbind offline logon = false
+    winbind enum users = yes
+    winbind enum groups = yes 
+
+    idmap_ldb:use rfc2307 = yes
+
+    # Configuração para criar diretórios home dos usuários
+    template homedir = /home/%D/%U
+    template shell = /bin/bash
+    obey pam restrictions = yes
 
 [sysvol]
-   path = /var/lib/samba/sysvol
-   read only = yes
+    path = /var/lib/samba/sysvol
+    read only = no
+
+[netlogon]
+    path = /var/lib/samba/sysvol/${DOMAIN}/scripts
+    read only = no
+
+[homes]
+    comment = Home Directories
+    browseable = no
+    read only = no
+    create mask = 0700
+    directory mask = 0700
+
+[printers]
+    comment = All Printers
+    path = /var/spool/samba
+    browseable = no
+    printable = yes
+
+[print$]
+    comment = Printer Drivers
+    path = /var/lib/samba/printers
 EOF
-    sudo systemctl restart samba-ad-dc
+
+    # Força winbind para recarregar o arquivo de configuração alterado.
+    sudo smbcontrol all reload-config
 }
 
-# ================================================
-# Função para Configurar o BIND
-# ================================================
+# Função para configurar o Kerberos
+configure_kerberos() {
+    echo "Configurando Kerberos..."
 
+    sudo bash -c "cat > /etc/krb5.conf" <<EOF
+[libdefaults]
+    default_realm = ${UPPER_DOMAIN}
+    dns_lookup_realm = false
+    dns_lookup_kdc = true
+    forwardable = yes
+    ticket_lifetime = 24h
+
+[realms]
+    ${UPPER_DOMAIN} = {
+        kdc = ${IP}
+        admin_server = ${IP}
+    }
+
+[domain_realm]
+    .${DOMAIN} = ${UPPER_DOMAIN}
+    ${DOMAIN} = ${UPPER_DOMAIN}
+EOF
+    sudo systemctl stop smbd nmbd winbind
+    sudo systemctl disable smbd nmbd winbind
+    sudo systemctl unmask samba-ad-dc
+
+sudo chmod 640 /var/lib/samba/private/dns.keytab
+sudo chown root:bind /var/lib/samba/private/dns.keytab
+
+sudo chmod 770 /var/lib/samba/bind-dns/
+sudo chown root:bind /var/lib/samba/bind-dns/
+sudo chown root:bind /var/lib/samba/bind-dns/dns.keytab
+
+sudo chmod 770 /var/lib/samba/bind-dns/dns/
+sudo chown root:bind /var/lib/samba/bind-dns/dns/
+
+
+sudo chown root:bind /etc/krb5.conf
+
+}
+
+# Função para configurar o BIND9
 configure_bind() {
-    echo "Configurando o BIND..."
-    sudo bash -c "cat > ${BIND_CONF_DIR}/named.conf.local" <<EOF
-zone \"${DOMAIN}\" {
-    type master;
-    file \"${ZONE_FILE}\";
+
+    echo "Configurando BIND9..."
+
+    # Criar zonas diretas
+   # sudo samba-tool dns zonecreate ${SERVER} ${DOMAIN} -U administrator
+   # sudo samba-tool dns add ${SERVER} ${DOMAIN} ${SERVER} A ${IP} -U administrator
+
+    # Configurar named.conf.options
+    sudo bash -c "cat > ${BIND_CONF_DIR}/named.conf.options" <<EOF
+options {
+    directory "/var/cache/bind";
+    tkey-gssapi-keytab "${BIND_KEYTAB_FILE}";
+    minimal-responses yes;
+    // Configuração de DNS recursivo
+    recursion yes;
+    forwarders {
+         8.8.8.8;
+         8.8.4.4;
+    };
+
+    dnssec-validation auto;
+    auth-nxdomain no;
+    listen-on-v6 { any; };
+    listen-on { any; };
+    allow-query { any; };
+    allow-transfer { any; };
+    allow-update {
+        key "rndc-key";
+    };
 };
 EOF
-    sudo bash -c "cat > ${ZONE_FILE}" <<EOF
-\$TTL 86400
-@   IN  SOA ${HOSTNAME}.${DOMAIN}. admin.${DOMAIN}. (
-                2024090201         ; Serial
-                3600               ; Refresh
-                1800               ; Retry
-                1209600            ; Expire
-                86400 )            ; Minimum TTL
 
-@   IN  NS  ${HOSTNAME}.${DOMAIN}.
-@   IN  A   ${IP_LAN}
-EOF
+    sudo chown root:bind "${BIND_KEYTAB_FILE}";
+    sudo chmod 640 "${BIND_KEYTAB_FILE}";
+
+    # Identificar a versão do BIND9
+    echo "Identificando a versão do BIND9..."
+    BIND_VERSION=$(named -v | grep -oP '\d+\.\d+')
+
+    # Descomentar a linha no arquivo /var/lib/samba/bind-dns/named.conf
+    sudo sed -i '/^#.*dlopen.*dlz_bind9.*so/s/^#//' /var/lib/samba/bind-dns/named.conf
+
+   sudo bash -c "echo 'include \"/var/lib/samba/bind-dns/named.conf\";' >> '${BIND_CONF_DIR}/named.conf.local'"
+
+    # Verificar configuração e reiniciar BIND9
+    echo "Verificando a configuração do BIND9..."
+
+    echo "Reiniciando o BIND9..."
     sudo systemctl restart bind9
+    if [ $? -eq 0 ]; then
+        echo "BIND configurado e reiniciado com sucesso."
+    else
+        echo "Falha ao configurar e reiniciar o BIND."
+       
+    fi
+
+    # Atualizar e configurar o DNS no Samba
+    echo "Atualizando DNS no Samba..."
+    sudo samba_upgradedns --dns-backend=BIND9_DLZ
+    sudo systemctl restart bind9
+    sudo systemctl enable bind9
+
+    echo "Configuração do BIND9 concluída com sucesso."
 }
 
-# ================================================
-# Execução das Funções
-# ================================================
 
-remove_packages
-install_packages
-configure_variables
-update_system
-configure_netplan
-configure_network_files
-configure_firewall
-configure_dhcp
-configure_samba
-configure_bind
 
-echo "Instalação e configuração concluídas!"
+
+   
+
+# Função para iniciar o Samba como controlador de domínio
+start_samba() {
+    echo "Iniciando Samba como controlador de domínio..."
+    sudo systemctl restart named 
+    sudo systemctl restart samba-ad-dc
+    sudo systemctl enable samba-ad-dc
+    sudo systemctl status samba-ad-dc
+    if [ $? -eq 0 ]; then
+        echo "Samba iniciado e habilitado com sucesso."
+    else
+        echo "Falha ao iniciar e habilitar o Samba."
+    fi
+}
+
+# Função para configurar a rede
+configure_network() {
+    echo "Configurando o Netplan..."
+
+    # Verifica se o arquivo Netplan já existe e cria uma cópia de segurança
+    if [ -f "$NETPLAN_CONF" ]; then
+        echo "Criando uma cópia de segurança do arquivo Netplan existente..."
+        sudo cp "$NETPLAN_CONF" "$NETPLAN_CONF.bak"
+    fi
+
+    # Configura o arquivo Netplan com os dados fornecidos
+    echo "Atualizando o arquivo de configuração $NETPLAN_CONF..."
+    sudo bash -c "cat > $NETPLAN_CONF" <<EOF
+network:
+    version: 2
+    ethernets:
+        ${INTERFACE_NAME}:
+            addresses:
+                - ${IP}/24
+            dhcp4: false
+            optional: true
+            nameservers:
+                addresses:
+                    - ${DNS_SERVERS}
+                    - ${DNS_GOOGLE}
+            routes:
+                - to: default
+                  via: ${GATEWAY}
+EOF
+
+    # Aplica a nova configuração do Netplan
+    echo "Aplicando a configuração do Netplan..."
+    sudo netplan apply
+
+    # Verifica se a configuração foi aplicada com sucesso
+    if [ $? -eq 0 ]; then
+        echo "Configuração do Netplan aplicada com sucesso."
+    else
+        echo "Falha ao aplicar a configuração do Netplan."
+    fi
+}
+
+
+# Configura o systemd-resolved
+configure_resolved() {
+   
+  # Cria uma cópia de segurança do arquivo de configuração existente
+	if [ -f "$RESOLVED_CONF" ]; then
+    		echo "Criando cópia de segurança do arquivo de configuração existente..."
+	        cp "$RESOLVED_CONF" "$RESOLVED_CONF.bak"
+	fi
+
+	# Escreve o conteúdo no arquivo de configuração
+	echo "Atualizando o arquivo de configuração $RESOLVED_CONF..."
+	echo "$RESOLVED_CONF_CONTENT" | sudo tee "$RESOLVED_CONF" > /dev/null
+
+	      
+         sudo rm -f /etc/resolv.conf
+         sudo ln -sv /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
+   	# Reinicia o serviço systemd-resolved
+	echo "Reiniciando o serviço systemd-resolved..."
+	sudo systemctl restart systemd-resolved
+
+	# Verifica o status do systemd-resolved
+	echo "Verificando o status do serviço systemd-resolved..."
+	systemd-resolve --status
+
+        echo "Configuração concluída."
+}
+# Função para abrir todos os arquivos alterados
+open_modified_files() {
+    echo "Abrindo arquivos modificados..."
+
+    # Arquivos modificados no script
+    FILES_TO_OPEN=(
+        "/etc/resolv.conf"
+	"/etc/netplan/01-netcfg.yaml"
+        "/etc/hosts"
+        "/etc/krb5.conf"
+        "/etc/samba/smb.conf"
+        "/etc/systemd/resolved.conf"
+        "/etc/bind/named.conf.options"
+        "/etc/bind/named.conf"
+        "/var/lib/samba/bind-dns/dns/${DOMAIN}.zone"
+        "/var/lib/samba/private/dns.keytab"
+        "/var/lib/samba/bind-dns/dns.keytab"
+        "/etc/pam.d/common-session"
+    )
+
+    # Abre os arquivos no editor especificado
+    for FILE in "${FILES_TO_OPEN[@]}"; do
+        if [ -f "$FILE" ]; then
+            echo "Abrindo $FILE..."
+            sudo nano "$FILE"
+        else
+            echo "Arquivo $FILE não encontrado."
+        fi
+    done
+}
+
+
+# Função para listar permissões dos arquivos e diretórios
+list_permissions() {
+    echo "Listando permissões dos arquivos e diretórios modificados..."
+
+    # Arquivos e diretórios modificados
+    ITEMS_TO_CHECK=(
+        "/etc/resolv.conf"
+        "/etc/netplan/01-netcfg.yaml"
+        "/etc/hosts"
+        "/etc/krb5.conf"
+        "/etc/samba/smb.conf"
+        "/etc/systemd/resolved.conf"
+        "/var/lib/samba/bind-dns/named.conf"
+        "/etc/bind/named.conf.options"
+        "/var/lib/samba/bind-dns/dns/${DOMAIN}.zone"
+        "/var/lib/samba/private/dns.keytab"
+        "/var/lib/samba/bind-dns/dns.keytab"
+        "/var/lib/samba/sysvol"
+        "/var/lib/samba/sysvol/${DOMAIN}/scripts"
+        "/var/spool/samba"
+        "/var/lib/samba/printers"
+    )
+
+    # Lista as permissões de cada item
+    for ITEM in "${ITEMS_TO_CHECK[@]}"; do
+        if [ -e "$ITEM" ]; then
+            echo "Permissões de $ITEM:"
+            ls -ld "$ITEM"
+        else
+            echo "Arquivo ou diretório $ITEM não encontrado."
+        fi
+    done
+}
+
+# Função para habilitar a criação automática de diretórios home
+create_home_directories() {
+    echo "Habilitando a criação automática de diretórios home..."
+    sudo pam-auth-update --enable winbind
+    sudo pam-auth-update --enable mkhomedir 
+  
+ }
+
+
+
+# Função principal para execução das etapas
+main() {
+    configure_network
+    update_system
+    remove_packages
+    install_packages
+
+    configure_samba
+    configure_kerberos
+    configure_bind
+    configure_resolved
+    start samba
+    pause    
+    create_home_directories
+    open_modified_files
+    pause
+    list_permissions
+   echo "finalizado" 
+   pause
+   sudo reboot
+
+}
+
+# Executa a função principal
+main
