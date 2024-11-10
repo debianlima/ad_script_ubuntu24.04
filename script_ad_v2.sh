@@ -394,14 +394,6 @@ network:
             addresses:
                 - ${IP}/24
             dhcp4: false
-            optional: true
-            nameservers:
-                addresses:
-                    - ${DNS_SERVERS}
-                    - ${DNS_GOOGLE}
-            routes:
-                - to: default
-                  via: ${GATEWAY}
 EOF
 
     # Aplica a nova configuração do Netplan
