@@ -41,8 +41,12 @@ Segue um passo a passo para configurar o Squid no Ubuntu com autenticação Kerb
 **Linux**
 
 ```bash
-kinit usuario_squid@DOMINIO.AD
-kadmin -q "ktadd -k /etc/krb5.keytab HTTP/nome_do_servidor@DOMINIO.AD"
+sudo samba-tool user add squiduser senha_do_usuario --given-name="Squid" --surname="User"
+sudo samba-tool user show squiduser
+sudo samba-tool domain exportkeytab /etc/squid/squiduser.keytab --principal=squiduser
+sudo ktutil
+ktutil:  rkt /etc/squid/squiduser.keytab
+ktutil:  list
 ```
 
 **Windows**
