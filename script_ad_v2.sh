@@ -110,6 +110,16 @@ EOF
     else
         echo "Falha ao configurar o arquivo /etc/hosts."
     fi
+       # Configuração do hostname
+    sudo bash -c "cat > /etc/hostname" <<EOF
+ ${SERVER}
+EOF
+
+    if [ $? -eq 0 ]; then
+        echo "Arquivo /etc/hostname configurado com sucesso."
+    else
+        echo "Falha ao configurar o arquivo /etc/hostname."
+    fi
 }
 
 # Função para parar e remover pacotes e dados
