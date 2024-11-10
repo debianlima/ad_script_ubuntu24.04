@@ -68,12 +68,11 @@ ktutil:  list
    Adicione as configurações de autenticação Kerberos:
 
     ```ini
-    auth_param negotiate program /usr/lib/squid/negotiate_kerberos_auth -s HTTP/nome_do_servidor@DOMINIO.AD
-    auth_param negotiate children 10
-    auth_param negotiate keep_alive on
-
-    acl kerberos_auth proxy_auth REQUIRED
-    http_access allow kerberos_auth
+    auth_param negotiate program /usr/lib/squid/negotiate_kerberos_auth -k /etc/squid/squiduser.keytab 
+    auth_param negotiate children 5 
+    auth_param negotiate keep_alive on 
+    acl kerberos_users proxy_auth REQUIRED 
+    http_access allow kerberos_users
     ```
 
 2. Configurar o acesso à rede interna:
