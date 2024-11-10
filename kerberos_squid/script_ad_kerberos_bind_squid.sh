@@ -303,7 +303,7 @@ EOF
 configure_squid() {
     echo "Configurando Squid com autenticação Kerberos..."
 
-    kinit usuario_squid@${UPPER_DOMAIN}
+    kinit proxy@${UPPER_DOMAIN}
     kadmin -q "ktadd -k /etc/krb5.keytab HTTP/${SERVER}.${DOMAIN}"
     sudo chown proxy:proxy /etc/squid/squid.keytab
     sudo chmod 600 /etc/squid/squid.keytab
