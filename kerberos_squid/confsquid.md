@@ -81,7 +81,7 @@ ktutil:  list
 
     ```ini
     acl rede_interna src 192.168.0.0/24
-    http_access allow kerberos_auth rede_interna
+    http_access allow kerberos_users rede_interna
     http_access deny all
     ```
 
@@ -119,7 +119,7 @@ ktutil:  list
     ssl_bump bump step3 all
 
     # Regras de acesso
-    http_access allow kerberos_auth rede_interna
+    http_access allow kerberos_users rede_interna
     http_access deny all
     ```
 
