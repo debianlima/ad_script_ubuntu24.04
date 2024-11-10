@@ -37,9 +37,18 @@ Segue um passo a passo para configurar o Squid no Ubuntu com autenticação Kerb
 
    No Active Directory, execute o seguinte comando para criar um principal de serviço para o Squid:
 
-    ```bash
-    ktpass -princ HTTP/nome_do_servidor@DOMINIO.AD -mapuser usuario_squid@DOMINIO.AD -crypto RC4-HMAC-NT -ptype KRB5_NT_PRINCIPAL -pass senha
-    ```
+   
+**Linux**
+
+```bash
+kinit usuario_squid@DOMINIO.AD
+kadmin -q "ktadd -k /etc/krb5.keytab HTTP/nome_do_servidor@DOMINIO.AD"
+```
+
+**Windows**
+
+    ktpass -princ HTTP/nome_do_servidor@DOMINIO.AD -mapuser usuario_squid@DOMINIO.AD -crypto RC4-HMAC-NT -ptype KRB5_NT_PRINCIPAL -  pass senha
+  
 
 3. Transferir o arquivo `squid.keytab` para o servidor Squid e garantir que ele tenha as permissões corretas:
 
