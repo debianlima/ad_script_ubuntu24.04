@@ -455,6 +455,7 @@ open_modified_files() {
         "/etc/resolv.conf"
 	"/etc/netplan/01-netcfg.yaml"
         "/etc/hosts"
+	"/etc/hostname"
         "/etc/krb5.conf"
         "/etc/samba/smb.conf"
         "/etc/systemd/resolved.conf"
