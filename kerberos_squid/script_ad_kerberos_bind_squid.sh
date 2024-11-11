@@ -147,11 +147,7 @@ samba-tool domain exportkeytab /etc/squid/proxysquid.keytab --principal=HTTP/aul
 sudo chown proxy:proxy /etc/squid/proxysquid.keytab
 sudo chmod 600 /etc/squid/proxysquid.keytab
 
-sudo ktutil
-ktutil: 
-ktutil: wkt /etc/squid/proxysquid.keytab
-list
-quit
+ sudo klist -kt /etc/squid/proxysquid.keytab
 
 
 # Step 6: Setting cache and start Squid
