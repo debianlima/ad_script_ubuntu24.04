@@ -1,6 +1,3 @@
-
-
-
 # Passo 1: Criação do usuário e configuração do shell
 #sudo useradd -m -s /sbin/nologin proxysquid
 #sudo passwd proxysquid
@@ -157,9 +154,6 @@ list
 quit
 
 
-
-
-
 # Step 6: Setting cache and start Squid
 sudo mkdir -p /opt/squid/cache
 echo ".apple.com" | sudo tee /etc/squid/nobumpSites.list
@@ -171,3 +165,11 @@ sudo systemctl start squid.service
 sudo systemctl enable squid.service
 
 sudo systemctl status squid.service
+
+#script original:  em https://pastebin.com/jbDnvFji accessado em 11/11/2024.
+#Vídeo original: em https://www.youtube.com/watch?v=3TQUF2a-Aw0 accessado em 11/11/2024.
+#link de apoio: em https://www.spinics.net/lists/squid/msg97303.html accessado em 11/11/2024.
+#link de apoio: em https://webhostinggeeks.com/howto/how-to-configure-squid-proxy-server-for-ssl-bumping/ accessado em 11/11/2024.
+#link de apoio:https://medium.com/big-data-blog/filtragem-avan%C3%A7ada-de-https-com-squid-proxy-e26d82b61e19 accessado em 11/11/2024.
+#link de apoio:https://www.techforce.com.br/2023/12/instalar-squid-forward-proxy-com-ssl.html accessado em 11/11/2024.
+#chat utilizado com IA: https://chatgpt.com/share/6731813e-66d0-8012-b089-a787a1e8b712 accessado em 11/11/2024.
