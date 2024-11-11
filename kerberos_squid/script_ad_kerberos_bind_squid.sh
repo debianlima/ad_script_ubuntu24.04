@@ -145,7 +145,7 @@ samba-tool domain exportkeytab /etc/squid/proxysquid.keytab --principal=HTTP/aul
 
 
 sudo chown proxy:proxy /etc/squid/proxysquid.keytab
-sudo chmod 600 /etc/squid/proxysquid.keytab
+sudo chmod 666 /etc/squid/proxysquid.keytab
 
  sudo klist -kt /etc/squid/proxysquid.keytab
 
