@@ -1,8 +1,12 @@
+
+
+
 # Passo 1: Criação do usuário e configuração do shell
 #sudo useradd -m -s /sbin/nologin proxysquid
 #sudo passwd proxysquid
 
-
+#script original:  em https://pastebin.com/jbDnvFji accessado em 11/11/2024.
+#Vídeo original: em https://www.youtube.com/watch?v=3TQUF2a-Aw0 accessado em 11/11/2024.
 
 # Step 1: Install dependencies
 sudo apt -y install libssl-dev devscripts build-essential fakeroot debhelper dh-autoreconf dh-apparmor cdbs \
