@@ -1,344 +1,169 @@
-#!/bin/bash
-# Configuração completa para Samba AD DC com Kerberos, Bind9 e Squid Proxy com autenticação Kerberos
-# Não esquecer de verificar a rota no gateway da rede local para o DNS
-
-# Variáveis de Configuração Geral
-DOMAIN="lima.internet"
-UPPER_DOMAIN=${DOMAIN^^}
-ADMIN_PASSWORD="abc@1234"  # Senha do administrador personalizável
-SAMBA_CONF_DIR="/etc/samba"
-BIND_CONF_DIR="/etc/bind"
-RESOLV_CONF="/etc/resolv.conf"
-HOSTS_CONF="/etc/hosts"
-PRIVATE_KEYTAB_FILE="/var/lib/samba/private/dns.keytab"
-BIND_KEYTAB_FILE="/var/lib/samba/bind-dns/dns.keytab"
-ZONE_DIR="/var/lib/samba/bind-dns/dns/"
-ZONE_FILE="${ZONE_DIR}${DOMAIN}.zone"
+# Passo 1: Criação do usuário e configuração do shell
+#sudo useradd -m -s /sbin/nologin proxysquid
+#sudo passwd proxysquid
 
 
-# Defina as variáveis de configuração de rede
-NETPLAN_CONF="/etc/netplan/50-cloud-init.yaml"
-#Rede wan
-INTERFACE_NAME_wan="ens33"  # Altere para o nome da sua interface de rede, se necessário
-GATEWAY_wan="172.16.57.2"
-IP_wan="172.16.57.3"
 
-#Rede lan
-INTERFACE_NAME="ens34"  # Altere para o nome da sua interface de rede, se necessário
-GATEWAY="172.16.0.1"
-DNS_SERVERS="127.0.0.1"
-DNS_GOOGLE="8.8.8.8"
-SERVER="server"
-IP="172.16.0.252"
-NETWORK=172.16.0.0/24 # ip para rede interna do squid.
+# Step 1: Install dependencies
+sudo apt -y install libssl-dev devscripts build-essential fakeroot debhelper dh-autoreconf dh-apparmor cdbs \
+libcppunit-dev libsasl2-dev libxml2-dev libkrb5-dev libdb-dev libnetfilter-conntrack-dev libexpat1-dev \
+libcap-dev libldap2-dev libpam0g-dev libgnutls28-dev libssl-dev libdbi-perl libecap3 libecap3-dev \
+libsystemd-dev libtdb-dev libtool-bin
 
-# Configuração do systemd-resolved
-RESOLVED_CONF="/etc/systemd/resolved.conf"
-RESOLVED_CONF_CONTENT="[Resolve]
-DNS=127.0.0.1
-FallbackDNS=${IP}
-Domains=${DOMAIN}"
+# Step 2: Clone Squid repository and configure
+git clone https://github.com/squid-cache/squid.git
+cd squid
+git branch -r
+git checkout v6
+./bootstrap.sh
+./configure --enable-auth-negotiate --with-auth-kerberos --with-openssl --enable-ssl-crtd --with-default-user=squid \
+'--prefix=/usr' '--includedir=${prefix}/include' '--mandir=${prefix}/share/man' \
+'--infodir=${prefix}/share/info' '--sysconfdir=/etc' '--localstatedir=/var' \
+'--disable-silent-rules' '--libdir=${prefix}/lib/x86_64-linux-gnu' '--runstatedir=/run' \
+'--datadir=/usr/share/squid' '--sysconfdir=/etc/squid' '--libexecdir=/usr/lib/squid' \
+'--mandir=/usr/share/man' '--enable-large-cache-files' '--enable-inline' '--enable-async-io=8' \
+'--enable-storeio=ufs,aufs,diskd,rock' '--enable-removal-policies=lru,heap' \
+'--enable-delay-pools' '--enable-cache-digests' '--enable-icap-client' \
+'--enable-follow-x-forwarded-for' '--with-swapdir=/var/spool/squid' '--with-logdir=/var/log/squid' \
+'--with-pidfile=/run/squid.pid' '--with-large-files' '--with-default-user=proxy' \
+'--enable-linux-netfilter' '--with-gnutls'
+make
+sudo make install
 
-# Função para atualizar o sistema
-update_system() {
-      echo "Atualizando o sistema..."
-    sudo apt-get update
-    if [ $? -eq 0 ]; then
-        echo "Atualização de pacotes concluída com sucesso."
-    else
-        echo "Falha na atualização dos pacotes."
-    fi
+# Step 3: Edit squid.service file
+sudo nano /lib/systemd/system/squid.service
 
-    sudo apt-get upgrade -y
-    if [ $? -eq 0 ]; then
-        echo "Atualização dos pacotes concluída com sucesso."
-    else
-        echo "Falha na atualização dos pacotes."
-    fi
-}
+# Contents for squid.service:
+[Unit]
+Description=Squid Web Proxy Server
+Documentation=man:squid(8)
+After=network.target network-online.target nss-lookup.target
 
-# Função para configurar resolv.conf e hosts
-configure_network_files() {
-    echo "Configurando /etc/resolv.conf e /etc/hosts..."
+[Service]
+Type=notify
+PIDFile=/var/run/squid.pid
+ExecStartPre=/usr/sbin/squid --foreground -z
+ExecStart=/usr/sbin/squid --foreground -sYC
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+NotifyAccess=all
+-
+[Install]
+WantedBy=multi-user.target
 
-    # Configuração temporária do resolv.conf
-    sudo bash -c "cat > ${RESOLV_CONF}" <<EOF
-nameserver 127.0.0.1
-EOF
+# Reload systemd daemon
+sudo systemctl daemon-reload
 
-    if [ $? -eq 0 ]; then
-        echo "Arquivo /etc/resolv.conf configurado com sucesso."
-    else
-        echo "Falha ao configurar o arquivo /etc/resolv.conf."
-    fi
+# Step 4: Edit Squid configuration file
+mv /etc/squid/squid.conf /etc/squid/squid.conf.bkp
+sudo nano /etc/squid/squid.conf
 
-    # Configuração do hosts
-    sudo bash -c "cat > ${HOSTS_CONF}" <<EOF
-127.0.0.1       localhost
-${IP}           ${SERVER}.${DOMAIN} ${SERVER}
-EOF
+# Example squid.conf contents:
+acl localnet src 0.0.0.1-0.255.255.255
+acl localnet src 10.0.0.0/8
+acl localnet src 100.64.0.0/10
+acl localnet src 169.254.0.0/16
+acl localnet src 172.16.0.0/12
+acl localnet src 192.168.0.0/16
+acl localnet src fc00::/7
+acl localnet src fe80::/10
 
-    if [ $? -eq 0 ]; then
-        echo "Arquivo /etc/hosts configurado com sucesso."
-    else
-        echo "Falha ao configurar o arquivo /etc/hosts."
-    fi
-}
+acl nobumpSites ssl::server_name "/etc/squid/nobumpSites.list"
+acl intermediate_fetching transaction_initiator certificate-fetching
+http_access allow intermediate_fetching
 
-# Função para configurar systemd-resolved
-configure_resolved() {
-     echo "Configurando /etc/resolv.conf e /etc/hosts..."
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 21
+acl Safe_ports port 443
+acl Safe_ports port 70
+acl Safe_ports port 210
+acl Safe_ports port 1025-65535
+acl Safe_ports port 280
+acl Safe_ports port 488
+acl Safe_ports port 591
+acl Safe_ports port 777
 
-    # Configuração temporária do resolv.conf
-    sudo bash -c "cat > ${RESOLV_CONF}" <<EOF
-nameserver ${DNS_GOOGLE}
-EOF
-
-    if [ $? -eq 0 ]; then
-        echo "Arquivo /etc/resolv.conf configurado com sucesso."
-    else
-        echo "Falha ao configurar o arquivo /etc/resolv.conf."
-    fi
-
-    # Configuração do hosts
-    sudo bash -c "cat > ${HOSTS_CONF}" <<EOF
-127.0.0.1       localhost
-${IP}           ${SERVER}.${DOMAIN} ${SERVER}
-EOF
-
-    if [ $? -eq 0 ]; then
-        echo "Arquivo /etc/hosts configurado com sucesso."
-    else
-        echo "Falha ao configurar o arquivo /etc/hosts."
-    fi
-       # Configuração do hostname
-    sudo bash -c "cat > /etc/hostname" <<EOF
- ${SERVER}
-EOF
-
-    if [ $? -eq 0 ]; then
-        echo "Arquivo /etc/hostname configurado com sucesso."
-    else
-        echo "Falha ao configurar o arquivo /etc/hostname."
-    fi
-    sudo systemctl restart systemd-resolved
-}
-
-# Função para configurar o netplan
-configure_netplan() {
-    echo "Configurando netplan..."
-    sudo bash -c "cat > ${NETPLAN_CONF}" <<EOF
-network:
-    version: 2
-    ethernets:
-        ${INTERFACE_NAME_wan}:
-            addresses:
-                - ${IP_wan}/24
-            dhcp4: false
-            optional: true
-            nameservers:
-                addresses:
-                    - 127.0.0.1
-                    - ${DNS_GOOGLE}
-            routes:
-                - to: default
-                  via: ${GATEWAY_wan}
-         ${INTERFACE_NAME}:
-            addresses:
-                - ${IP}/24
-            dhcp4: false
-EOF
-    sudo netplan apply
-}
-
-# Função para parar e remover pacotes antigos
-remove_packages() {
-    echo "Removendo pacotes antigos..."
-    sudo systemctl stop smbd squid nmbd winbind
-    sudo systemctl disable smbd squid nmbd winbind
-     if [ $? -eq 0 ]; then
-        echo "Serviços parados e desativados com sucesso."
-    else
-        echo "Falha ao parar e desativar os serviços."
-    fi
-    sudo apt-get remove --purge -y samba samba-common-bin krb5-kdc krb5-admin-server \
-        winbind libpam-winbind libnss-winbind libpam-krb5 libpam-mkhomedir \
-        libpam-mount bind9 bind9utils bind9-doc squid krb5-user libkrb5-dev ssl-cert
-      if [ $? -eq 0 ]; then
-        echo "Pacotes removidos com sucesso."
-    else
-        echo "Falha ao remover pacotes."
-    fi
-    sudo apt-get autoremove -y
-    sudo rm -rf /var/lib/samba /etc/samba /var/lib/krb5kdc /etc/squid /etc/krb5kdc /var/lib/bind /etc/bind /etc/krb5.conf 
-   if [ $? -eq 0 ]; then
-        echo "Dados removidos com sucesso."
-    else
-        echo "Falha ao remover dados."
-    fi
-}
-
-# Função para reinstalar pacotes necessários
-install_packages() {
-    echo "Instalando pacotes necessários..."
-    sudo apt-get update
-    sudo apt-get install -y samba krb5-kdc krb5-admin-server winbind libpam-winbind \
-        libnss-winbind libpam-krb5 libpam-mkhomedir libpam-mount bind9 bind9utils \
-        bind9-doc squid krb5-user libkrb5-dev ssl-cert 
-}
-
-# Função para configurar o Samba
-configure_samba() {
-    echo "Configurando Samba como controlador de domínio..."
-    sudo rm -f ${SAMBA_CONF_DIR}/smb.conf
-    sudo samba-tool domain provision --realm=${DOMAIN} --domain=${DOMAIN%%.*} \
-        --server-role=dc --dns-backend=BIND9_DLZ --use-rfc2307 --function-level=2008_R2 \
-        --adminpass=${ADMIN_PASSWORD}
-    sudo cp ${SAMBA_CONF_DIR}/smb.conf ${SAMBA_CONF_DIR}/smb.conf.bak
-    sudo bash -c "cat > ${SAMBA_CONF_DIR}/smb.conf" <<EOF
-# Configurações do Samba
-EOF
-    sudo smbcontrol all reload-config
-}
-
-# Função para configurar o Kerberos
-configure_kerberos() {
-    echo "Configurando Kerberos..."
-    sudo bash -c "cat > /etc/krb5.conf" <<EOF
-[libdefaults]
-    default_realm = ${UPPER_DOMAIN}
-    dns_lookup_realm = false
-    dns_lookup_kdc = true
-
-[realms]
-   ${UPPER_DOMAIN} = {
-        kdc = ${IP}
-        admin_server = ${IP}
-    }
-
-[domain_realm]
-    .${DOMAIN} = ${UPPER_DOMAIN}
-    ${DOMAIN} = ${UPPER_DOMAIN}
-EOF
-   sudo systemctl stop smbd squid nmbd winbind
-    sudo systemctl disable smbd squid nmbd winbind
-    sudo systemctl unmask samba-ad-dc
-
-sudo chmod 640 /var/lib/samba/private/dns.keytab
-sudo chown root:bind /var/lib/samba/private/dns.keytab
-
-sudo chmod 770 /var/lib/samba/bind-dns/
-sudo chown root:bind /var/lib/samba/bind-dns/
-sudo chown root:bind /var/lib/samba/bind-dns/dns.keytab
-
-sudo chmod 770 /var/lib/samba/bind-dns/dns/
-sudo chown root:bind /var/lib/samba/bind-dns/dns/
-
-
-sudo chown root:bind /etc/krb5.conf
-
-}
-
-# Função para configurar o Bind
-configure_bind() {
-    echo "Configurando Bind..."
-    sudo mkdir -p /var/lib/samba/bind-dns
-    sudo cp ${PRIVATE_KEYTAB_FILE} ${BIND_KEYTAB_FILE}
-    sudo bash -c "cat > ${BIND_CONF_DIR}/named.conf.options" <<EOF
-options {
-    directory "/var/cache/bind";
-    tkey-gssapi-keytab "${BIND_KEYTAB_FILE}";
-    minimal-responses yes;
-    // Configuração de DNS recursivo
-    recursion yes;
-    forwarders {
-        ${DNS_GOOGLE};
-         8.8.4.4;
-    };
-
-    dnssec-validation auto;
-    auth-nxdomain no;
-    listen-on-v6 { any; };
-    listen-on { any; };
-    allow-query { any; };
-    allow-transfer { any; };
-    allow-update {
-        key "rndc-key";
-    };
-};
-EOF
-      sudo chown root:bind "${BIND_KEYTAB_FILE}";
-
-    # Identificar a versão do BIND9
-    echo "Identificando a versão do BIND9..."
-    BIND_VERSION=$(named -v | grep -oP '\d+\.\d+')
-
-    # Descomentar a linha no arquivo /var/lib/samba/bind-dns/named.conf
-    sudo sed -i '/^#.*dlopen.*dlz_bind9.*so/s/^#//' /var/lib/samba/bind-dns/named.conf
-
-   sudo bash -c "echo 'include \"/var/lib/samba/bind-dns/named.conf\";' >> '${BIND_CONF_DIR}/named.conf.local'"
-
-    # Verificar configuração e reiniciar BIND9
-    echo "Verificando a configuração do BIND9..."
-
-    echo "Reiniciando o BIND9..."
-    sudo systemctl restart bind9
-    if [ $? -eq 0 ]; then
-        echo "BIND configurado e reiniciado com sucesso."
-    else
-        echo "Falha ao configurar e reiniciar o BIND."
-       
-    fi
-
-    # Atualizar e configurar o DNS no Samba
-    echo "Atualizando DNS no Samba..."
-    sudo samba_upgradedns --dns-backend=BIND9_DLZ
-    sudo systemctl restart bind9
-    sudo systemctl enable bind9
-
-    echo "Configuração do BIND9 concluída com sucesso."
-}
-
-# Função para configurar o Squid com autenticação Kerberos
-configure_squid() {
-    echo "Configurando Squid com autenticação Kerberos..."
-
-    kinit proxy@${UPPER_DOMAIN}
-    kadmin -q "ktadd -k /etc/krb5.keytab HTTP/${SERVER}.${DOMAIN}"
-    sudo chown proxy:proxy /etc/squid/squid.keytab
-    sudo chmod 600 /etc/squid/squid.keytab
-
-    sudo bash -c 'cat > /etc/squid/squid.conf' <<EOT
-auth_param negotiate program /usr/lib/squid/negotiate_kerberos_auth -s HTTP/${SERVER}.${DOMAIN}
-auth_param negotiate children 10
+# Authentication parameters for Kerberos
+auth_param negotiate program /usr/lib/squid/negotiate_kerberos_auth -k /etc/squid/proxysquid.keytab
+auth_param negotiate children 5
 auth_param negotiate keep_alive on
+acl kerberos_users proxy_auth REQUIRED
+http_access allow kerberos_users
 
-acl kerberos_auth proxy_auth REQUIRED
-http_access allow kerberos_auth
 
-acl rede_interna src ${NETWORK}
-http_access allow kerberos_auth rede_interna
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access allow localhost manager
+http_access deny manager
+http_access allow localnet
+http_access allow localhost
 http_access deny all
 
-https_port 3128 cert=/etc/squid/ssl_cert/squid.pem
-EOT
-    sudo systemctl restart squid
-}
+http_port 3128 ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=20MB \
+cert=/etc/squid/certs/squid-ca-cert-key.pem cipher=HIGH:MEDIUM:!LOW:!RC4:!SEED:!IDEA:!3DES:!MD5:!EXP:!PSK:!DSS \
+options=NO_TLSv1,NO_SSLv3 tls-dh=prime256v1:/etc/squid/bump_dhparam.pem
 
-# Função principal
-main() {
-    update_system
-    remove_packages
-    install_packages
-    configure_network_files
-    configure_resolved
-    configure_netplan
-    configure_samba
-    configure_kerberos
-    configure_bind
-    configure_squid
-    echo "Script concluído."
-}
+sslproxy_cert_error allow all
+acl step1 at_step SslBump1
+acl step2 at_step SslBump2
+acl step3 at_step SslBump3
+ssl_bump peek step1 all 
+ssl_bump peek step2 nobumpSites
+ssl_bump splice step3 nobumpSites
+ssl_bump stare step2
+ssl_bump bump step3
 
-# Executa o script
-main
+cache_dir ufs /opt/squid/cache 3000 16 256
+coredump_dir /var/spool/squid
+refresh_pattern ^ftp:           1440    20%     10080
+refresh_pattern ^gopher:        1440    0%      1440
+refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
+refresh_pattern .               0       20%     4320
+
+# Step 5: Setting up SSL certificates
+openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -extensions v3_ca -keyout squid-ca-key.pem -out squid-ca-cert.pem
+cat squid-ca-cert.pem squid-ca-key.pem >> squid-ca-cert-key.pem
+sudo mkdir -p /etc/squid/certs
+sudo cp squid-ca-cert-key.pem /etc/squid/certs/squid-ca-cert-key.pem
+sudo chown proxy:proxy /etc/squid/certs/squid-ca-cert-key.pem
+openssl ecparam -name prime256v1 -genkey -noout -out /etc/squid/bump_dhparam.pem
+#sudo openssl dhparam -out /etc/squid/bump_dhparam.pem 2048
+sudo chown proxy:proxy /etc/squid/bump_dhparam.pem
+sudo /usr/lib/squid/security_file_certgen -c -s /var/spool/squid/ssl_db -M 4MB
+
+
+
+
+sudo apt-get install libkrb5-dev -y
+
+# Passo 3: Criação e teste do keytab para autenticação Kerberos
+sudo samba-tool user add proxysquid --random-password
+sudo samba-tool user show proxysquid
+samba-tool domain exportkeytab /etc/squid/proxysquid.keytab --principal=HTTP/aulagit.lima.localdomain@LIMA.LOCALDOMAIN
+
+
+sudo chown proxy:proxy /etc/squid/proxysquid.keytab
+sudo chmod 600 /etc/squid/proxysquid.keytab
+
+sudo ktutil
+ktutil: 
+ktutil: wkt /etc/squid/proxysquid.keytab
+list
+quit
+
+
+
+
+
+# Step 6: Setting cache and start Squid
+sudo mkdir -p /opt/squid/cache
+echo ".apple.com" | sudo tee /etc/squid/nobumpSites.list
+sudo chown proxy:proxy /etc/squid/nobumpSites.list
+sudo chown proxy:proxy /opt/squid/cache
+sudo chown proxy:proxy /var/log/squid
+sudo squid -z
+sudo systemctl start squid.service
+sudo systemctl enable squid.service
+
+sudo systemctl status squid.service
