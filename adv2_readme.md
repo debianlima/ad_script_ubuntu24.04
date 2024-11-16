@@ -1,3 +1,59 @@
+# 📘 Explicação do Script Bash para Configuração do Samba4 como Controlador de Domínio (AD)
+
+Este script em Bash configura um servidor Samba como um **controlador de domínio Active Directory**, integrando serviços DNS com o **BIND** e autenticação com **Kerberos**. Abaixo está a explicação detalhada de cada parte do script.
+
+🔗 **Link para o Script Completo**:  
+[Script Bash para Configuração do Samba4](https://github.com/debianlima/ad_script_ubuntu24.04/blob/main/script_ad_v2.sh)
+
+---
+
+## 📄 **Variáveis**
+As variáveis definidas no início do script armazenam configurações importantes:
+
+- `DOMAIN`: Define o domínio a ser configurado.
+- `UPPER_DOMAIN`: O domínio em letras maiúsculas.
+- `ADMIN_PASSWORD`: A senha do administrador.
+- `SAMBA_CONF_DIR`: Diretório de configuração do Samba.
+- `BIND_CONF_DIR`: Diretório de configuração do BIND.
+- `RESOLV_CONF`: Caminho do arquivo de configuração DNS.
+- `HOSTS_CONF`: Caminho do arquivo de hosts.
+- `PRIVATE_KEYTAB_FILE`: Caminho para o arquivo de chave do Samba.
+- `BIND_KEYTAB_FILE`: Caminho para o arquivo de chave do BIND.
+- `ZONE_DIR`: Diretório onde os arquivos de zona estão localizados.
+- `ZONE_FILE`: Caminho para o arquivo de zona do domínio.
+- `NETPLAN_CONF`: Caminho para o arquivo de configuração do Netplan.
+- `INTERFACE_NAME`: Nome da interface de rede.
+- `GATEWAY`: Gateway da rede local.
+- `DNS_SERVERS`: Servidores DNS.
+- `DNS_GOOGLE`: Servidor DNS do Google.
+- `SERVER`: Nome do servidor.
+- `IP`: Endereço IP do servidor.
+- `RESOLVED_CONF`: Caminho para o arquivo de configuração do `systemd-resolved`.
+- `RESOLVED_CONF_CONTENT`: Conteúdo da configuração do `systemd-resolved`.
+
+---
+
+## 🔧 **Funções do Script**
+
+### 1. **Configurar Rede**
+```bash
+configure_network() {
+    echo "Configurando a rede..."
+    echo "network: {" > $NETPLAN_CONF
+    echo "    version: 2" >> $NETPLAN_CONF
+    echo "    renderer: networkd" >> $NETPLAN_CONF
+    echo "    ethernets:" >> $NETPLAN_CONF
+    echo "        $INTERFACE_NAME:" >> $NETPLAN_CONF
+    echo "            dhcp4: no" >> $NETPLAN_CONF
+    echo "            addresses: [$IP/24]" >> $NETPLAN_CONF
+    echo "            gateway4: $GATEWAY" >> $NETPLAN_CONF
+    echo "            nameservers:" >> $NETPLAN_CONF
+    echo "                addresses: [$DNS_SERVERS]" >> $NETPLAN_CONF
+    echo "}" >> $NETPLAN_CONF
+    netplan apply
+}
+
+```
 <h1>Explicação do Script Bash</h1>
 
 <p>Este script em Bash configura um servidor Samba como um controlador de domínio Active Directory, juntamente com o serviço DNS usando BIND. Abaixo está uma explicação detalhada de cada parte do script:</p>
