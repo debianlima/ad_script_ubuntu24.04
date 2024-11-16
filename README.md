@@ -35,7 +35,7 @@ Nesta playlist do YouTube, você aprenderá a configurar um ambiente completo e 
 ## 📂 Scripts Disponíveis
 Os scripts prontos utilizados nos vídeos estão disponíveis neste repositório. Eles incluem:  
 1. [**Configuração do Samba4 como Controlador de Domínio.**](https://github.com/debianlima/ad_script_ubuntu24.04/blob/main/adv2_readme.md).
-3. **Configuração do Squid Proxy com SSL Bumping e integração ao AD.**
+3. [**Configuração do Squid Proxy com SSL Bumping e integração ao AD.**](https://github.com/debianlima/ad_script_ubuntu24.04/blob/main/kerberos_squid/confsquid.md).
 
 Certifique-se de revisar os scripts e adaptá-los às suas necessidades de rede antes de implementá-los em produção.
 
