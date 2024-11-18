@@ -141,6 +141,7 @@ sudo apt-get install libkrb5-dev -y
 # Passo 3: Criação e teste do keytab para autenticação Kerberos
 sudo samba-tool user add proxysquid --random-password
 sudo samba-tool user show proxysquid
+samba-tool spn add HTTP/aulagit.lima.localdomain proxysquid
 samba-tool domain exportkeytab /etc/squid/proxysquid.keytab --principal=HTTP/aulagit.lima.localdomain@LIMA.LOCALDOMAIN
 
 
